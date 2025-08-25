@@ -37,7 +37,7 @@ log_step() {
 COMMANDY_VERSION="latest"
 COMMANDY_DIR="$HOME/.commandy"
 GITHUB_REPO="aptro/commandy"
-INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="$HOME/.local/bin"
 LLAMA_CPP_REPO="ggml-org/llama.cpp"
 GEMMA_MODEL="ggml-org/gemma-3-270m-GGUF"
 
@@ -142,9 +142,10 @@ check_prerequisites() {
         exit 1
     fi
     
-    # Check if we can write to install directory
-    if [ ! -w "$(dirname "$INSTALL_DIR")" ] && [ "$EUID" -ne 0 ]; then
-        log_warning "May need sudo permissions to install to $INSTALL_DIR"
+    # Create local bin directory if it doesn't exist
+    if [ ! -d "$INSTALL_DIR" ]; then
+        log_info "Creating local bin directory: $INSTALL_DIR"
+        mkdir -p "$INSTALL_DIR"
     fi
     
     log_success "Prerequisites check passed"
@@ -321,7 +322,7 @@ install_commandy_binary() {
     # Create install directory if needed
     if [ ! -d "$INSTALL_DIR" ]; then
         log_info "Creating install directory: $INSTALL_DIR"
-        sudo mkdir -p "$INSTALL_DIR" || {
+        mkdir -p "$INSTALL_DIR" || {
             log_error "Failed to create install directory"
             exit 1
         }
@@ -345,13 +346,8 @@ install_commandy_binary() {
     # Install binary
     log_info "Installing binary to $INSTALL_DIR/commandy"
     
-    if [ -w "$INSTALL_DIR" ]; then
-        mv "$temp_file" "$INSTALL_DIR/commandy"
-        chmod +x "$INSTALL_DIR/commandy"
-    else
-        sudo mv "$temp_file" "$INSTALL_DIR/commandy"
-        sudo chmod +x "$INSTALL_DIR/commandy"
-    fi
+    mv "$temp_file" "$INSTALL_DIR/commandy"
+    chmod +x "$INSTALL_DIR/commandy"
     
     # Verify installation
     if ! "$INSTALL_DIR/commandy" --version >/dev/null 2>&1; then
