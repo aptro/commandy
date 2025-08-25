@@ -87,15 +87,7 @@ impl Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        let home_dir = dirs::home_dir()
-            .map(|h| {
-                h.join(".commandy")
-                    .join("models")
-                    .join("gemma-3n")
-                    .display()
-                    .to_string()
-            })
-            .unwrap_or_else(|| "~/.commandy/models/gemma-3n".to_string());
+        let model_name = "ggml-org/gemma-3-270m-GGUF".to_string();
 
         Self {
             general: GeneralConfig {
@@ -104,9 +96,9 @@ impl Default for Settings {
                 learning_enabled: true,
             },
             model: ModelConfig {
-                model_path: home_dir,
-                max_tokens: 100,
-                temperature: 0.0,
+                model_path: model_name,
+                max_tokens: 200,
+                temperature: 0.1,
             },
             cache: CacheConfig {
                 max_cache_entries: 1000,

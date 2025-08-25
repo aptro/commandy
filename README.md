@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org/)
 
-Translates natural language into shell commands using local AI models via Ollama.
+Translates natural language into shell commands using local AI models via llama.cpp with Gemma 3 270M.
 
 ## Quick Start
 
@@ -17,10 +17,10 @@ Translates natural language into shell commands using local AI models via Ollama
 
 ```bash
 # Quick install (recommended)
-curl -fsSL https://raw.githubusercontent.com/commandy-sh/commandy/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/aptro/commandy/main/install.sh | sh
 
 # OR download from releases
-# https://github.com/commandy-sh/commandy/releases
+# https://github.com/aptro/commandy/releases
 
 # Initialize Commandy
 commandy init
@@ -77,6 +77,13 @@ Full command: `docker ps -a --format "table {{.Names}}\t{{.Status}}"`
 "docker logs for container" → `docker logs my-app`
 ```
 
+### AI Model
+- **Gemma 3 270M**: Ultra-compact 270 million parameter model (292MB)
+- **Local inference**: Runs entirely offline via llama.cpp binary
+- **Cross-platform**: Native binaries for macOS (Intel & ARM64) and Linux
+- **Efficient**: Extremely low resource usage and battery consumption
+- **No services**: No background processes or HTTP servers needed
+
 ### Validation
 - Validates commands using `which` and system PATH
 - Scans `/usr/local/bin`, `/usr/bin`, `/bin` for available tools
@@ -100,13 +107,14 @@ commandy "your natural language query"
 ~/.commandy/
 ├── COMMANDY.md              # Evolving knowledge base
 ├── config.toml              # Configuration
+├── bin/                     # llama.cpp binary
 ├── cache/
 │   └── suggestions.db       # Smart cache with success tracking
 └── backups/                 # COMMANDY.md backups
 
 src/
 ├── cli/                     # Command-line interface & interactions  
-├── ai/                      # Ollama integration & prompt engineering
+├── ai/                      # llama.cpp integration & prompt engineering
 ├── context/                 # Caching, learning, shell history
 ├── config/                  # Configuration management
 └── utils/                   # Environment detection, validation
@@ -119,9 +127,9 @@ For contributors and developers who want to build locally:
 ```bash
 # Clone the repository
 # SSH (if you have GitHub SSH keys set up)
-git clone git@github.com:commandy-sh/commandy.git
+git clone git@github.com:aptro/commandy.git
 # OR HTTPS
-git clone https://github.com/commandy-sh/commandy.git
+git clone https://github.com/aptro/commandy.git
 cd commandy
 
 # Build and install

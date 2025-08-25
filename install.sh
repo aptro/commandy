@@ -38,7 +38,8 @@ COMMANDY_VERSION="latest"
 COMMANDY_DIR="$HOME/.commandy"
 GITHUB_REPO="aptro/commandy"
 INSTALL_DIR="/usr/local/bin"
-OLLAMA_MODEL="gemma3n:e2b"
+LLAMA_CPP_REPO="ggml-org/llama.cpp"
+GEMMA_MODEL="ggml-org/gemma-3-270m-GGUF"
 
 # Global variables
 OS=""
@@ -149,110 +150,154 @@ check_prerequisites() {
     log_success "Prerequisites check passed"
 }
 
-# Install Ollama
-install_ollama() {
-    log_step "Installing Ollama..."
+# Install llama.cpp binary
+install_llamacpp() {
+    log_step "Installing llama.cpp..."
     
-    if command_exists ollama; then
-        log_info "Ollama already installed: $(ollama --version 2>/dev/null || echo 'version unknown')"
-        return 0
+    local bin_dir="$COMMANDY_DIR/bin"
+    local binary_name="llama-cpp"
+    local binary_path="$bin_dir/$binary_name"
+    
+    # Add .exe extension for Windows (future support)
+    if [[ "$OS" == "windows" ]]; then
+        binary_name="llama-cpp.exe"
+        binary_path="$bin_dir/$binary_name"
     fi
     
-    log_info "Ollama not found, installing..."
+    # Check if already installed
+    if [ -f "$binary_path" ]; then
+        log_info "llama.cpp already installed at $binary_path"
+        if "$binary_path" --version >/dev/null 2>&1; then
+            log_success "llama.cpp binary is working"
+            return 0
+        else
+            log_warning "Existing binary not working, reinstalling..."
+        fi
+    fi
     
-    case "$OS" in
-        "macos")
-            # Try Homebrew first, then direct install
-            if command_exists brew; then
-                log_info "Installing Ollama via Homebrew..."
-                brew install ollama || {
-                    log_warning "Homebrew install failed, trying direct install..."
-                    curl -fsSL https://ollama.ai/install.sh | sh
-                }
-            else
-                log_info "Installing Ollama directly..."
-                curl -fsSL https://ollama.ai/install.sh | sh
-            fi
+    # Create bin directory
+    mkdir -p "$bin_dir"
+    
+    # Determine download URL based on platform
+    local download_url
+    case "$PLATFORM" in
+        "x86_64-apple-darwin")
+            download_url="https://github.com/$LLAMA_CPP_REPO/releases/download/b6265/llama-b6265-bin-macos-x64.zip"
             ;;
-        "linux")
-            log_info "Installing Ollama for Linux..."
-            curl -fsSL https://ollama.ai/install.sh | sh
+        "aarch64-apple-darwin")
+            download_url="https://github.com/$LLAMA_CPP_REPO/releases/download/b6265/llama-b6265-bin-macos-arm64.zip"
+            ;;
+        "x86_64-unknown-linux-gnu")
+            download_url="https://github.com/$LLAMA_CPP_REPO/releases/download/b6265/llama-b6265-bin-ubuntu-x64.zip"
+            ;;
+        *)
+            log_error "Unsupported platform for llama.cpp: $PLATFORM"
+            exit 1
             ;;
     esac
     
-    # Verify installation
-    if ! command_exists ollama; then
-        log_error "Ollama installation failed"
+    log_info "Downloading llama.cpp from: $download_url"
+    
+    local temp_file=$(mktemp)
+    local temp_dir=$(mktemp -d)
+    
+    # Download the zip file
+    if ! curl -L --fail --progress-bar "$download_url" -o "$temp_file"; then
+        log_error "Failed to download llama.cpp"
+        rm -f "$temp_file"
+        rm -rf "$temp_dir"
         exit 1
     fi
     
-    log_success "Ollama installed successfully"
-}
-
-# Start Ollama service
-start_ollama_service() {
-    log_step "Starting Ollama service..."
-    
-    # Check if already running
-    if curl -s http://localhost:11434/api/version >/dev/null 2>&1; then
-        log_info "Ollama service already running"
-        return 0
+    # Extract the zip file
+    if ! unzip -q "$temp_file" -d "$temp_dir"; then
+        log_error "Failed to extract llama.cpp archive"
+        rm -f "$temp_file"
+        rm -rf "$temp_dir"
+        exit 1
     fi
     
-    log_info "Starting Ollama service..."
-    
-    case "$OS" in
-        "macos")
-            # Start Ollama in the background
-            nohup ollama serve >/dev/null 2>&1 &
-            ;;
-        "linux")
-            # Try systemd first, then manual start
-            if command_exists systemctl; then
-                sudo systemctl start ollama || {
-                    log_info "Systemd start failed, starting manually..."
-                    nohup ollama serve >/dev/null 2>&1 &
-                }
-            else
-                nohup ollama serve >/dev/null 2>&1 &
-            fi
-            ;;
-    esac
-    
-    # Wait for service to start
-    log_info "Waiting for Ollama service to start..."
-    for i in {1..10}; do
-        if curl -s http://localhost:11434/api/version >/dev/null 2>&1; then
-            log_success "Ollama service started"
-            return 0
+    # Find the main binary (llama-cli in the build/bin directory)
+    local extracted_binary=""
+    for binary in "$temp_dir/build/bin/llama-cli" "$temp_dir/llama-cli" "$temp_dir/main" "$temp_dir/build/bin/main"; do
+        if [ -f "$binary" ]; then
+            extracted_binary="$binary"
+            break
         fi
-        sleep 2
     done
     
-    log_warning "Ollama service may not have started properly"
-    log_info "You can start it manually with: ollama serve"
-}
-
-# Pull the Gemma model
-pull_model() {
-    log_step "Pulling Gemma model ($OLLAMA_MODEL)..."
-    
-    # Check if model already exists
-    if ollama list | grep -q "$OLLAMA_MODEL"; then
-        log_info "Model $OLLAMA_MODEL already available"
-        return 0
+    if [ -z "$extracted_binary" ]; then
+        log_error "Could not find llama.cpp binary in archive"
+        rm -f "$temp_file"
+        rm -rf "$temp_dir"
+        exit 1
     fi
     
-    log_info "Pulling model $OLLAMA_MODEL (this may take several minutes)..."
+    # Copy to our bin directory
+    cp "$extracted_binary" "$binary_path"
+    chmod +x "$binary_path"
     
-    # Pull with progress indication
-    ollama pull "$OLLAMA_MODEL" || {
-        log_error "Failed to pull model $OLLAMA_MODEL"
-        log_info "You can try pulling it manually later with: ollama pull $OLLAMA_MODEL"
+    # Copy required shared libraries
+    local lib_dir="${extracted_binary%/*}"  # Get directory of the binary
+    if [ -d "$lib_dir" ]; then
+        log_info "Copying shared libraries..."
+        for lib in "$lib_dir"/*.dylib "$lib_dir"/*.so; do
+            if [ -f "$lib" ]; then
+                cp "$lib" "$bin_dir/"
+            fi
+        done
+    fi
+    
+    # Cleanup
+    rm -f "$temp_file"
+    rm -rf "$temp_dir"
+    
+    # Verify installation
+    if ! "$binary_path" --version >/dev/null 2>&1; then
+        log_error "llama.cpp binary installation verification failed"
+        exit 1
+    fi
+    
+    log_success "llama.cpp installed successfully to $binary_path"
+}
+
+# Initialize commandy directory structure
+initialize_commandy_directories() {
+    log_step "Creating commandy directory structure..."
+    
+    # Create all necessary directories
+    local subdirs=("cache" "models" "logs" "backups" "bin")
+    for subdir in "${subdirs[@]}"; do
+        mkdir -p "$COMMANDY_DIR/$subdir"
+    done
+    
+    log_success "Directory structure created"
+}
+
+# Verify llama.cpp installation and model
+verify_llamacpp_setup() {
+    log_step "Verifying llama.cpp setup..."
+    
+    local binary_path="$COMMANDY_DIR/bin/llama-cpp"
+    if [[ "$OS" == "windows" ]]; then
+        binary_path="$COMMANDY_DIR/bin/llama-cpp.exe"
+    fi
+    
+    # Test binary
+    if ! [ -f "$binary_path" ]; then
+        log_error "llama.cpp binary not found at $binary_path"
         return 1
-    }
+    fi
     
-    log_success "Model $OLLAMA_MODEL pulled successfully"
+    # Test binary execution
+    if ! "$binary_path" --version >/dev/null 2>&1; then
+        log_error "llama.cpp binary test failed"
+        return 1
+    fi
+    
+    log_info "Using Gemma 3 270M model: $GEMMA_MODEL"
+    log_info "The model will be downloaded automatically on first use"
+    log_success "llama.cpp setup verified"
 }
 
 # Download and install Commandy binary
@@ -393,23 +438,27 @@ health_check() {
         log_success "✅ Commandy binary accessible"
     fi
     
-    # Check Ollama service
-    if ! curl -s http://localhost:11434/api/version >/dev/null 2>&1; then
-        log_error "❌ Ollama service not running"
-        log_info "Start it with: ollama serve"
-        issues=$((issues + 1))
-    else
-        log_success "✅ Ollama service running"
+    # Check llama.cpp binary
+    local llamacpp_binary="$COMMANDY_DIR/bin/llama-cpp"
+    if [[ "$OS" == "windows" ]]; then
+        llamacpp_binary="$COMMANDY_DIR/bin/llama-cpp.exe"
     fi
     
-    # Check model
-    if ! ollama list 2>/dev/null | grep -q "$OLLAMA_MODEL"; then
-        log_error "❌ Model $OLLAMA_MODEL not available"
-        log_info "Pull it with: ollama pull $OLLAMA_MODEL"
+    if ! [ -f "$llamacpp_binary" ]; then
+        log_error "❌ llama.cpp binary not found at $llamacpp_binary"
+        log_info "Run installation again to download llama.cpp"
+        issues=$((issues + 1))
+    elif ! "$llamacpp_binary" --version >/dev/null 2>&1; then
+        log_error "❌ llama.cpp binary not working"
+        log_info "Try reinstalling with the installation script"
         issues=$((issues + 1))
     else
-        log_success "✅ Model $OLLAMA_MODEL available"
+        log_success "✅ llama.cpp binary working"
     fi
+    
+    # Model info (no need to check as it downloads automatically)
+    log_success "✅ Using Gemma 3 270M model ($GEMMA_MODEL)"
+    log_info "Model will be downloaded automatically on first use"
     
     # Check directory
     if [ ! -d "$COMMANDY_DIR" ]; then
@@ -441,8 +490,7 @@ show_completion() {
     echo -e "${BLUE}Useful Commands:${NC}"
     echo "  commandy doctor          # Check system health"
     echo "  commandy --help          # Show help"
-    echo "  ollama list              # List available models"
-    echo "  ollama serve             # Start Ollama service"
+    echo "  commandy config          # Show configuration"
     echo ""
     
     if ! command_exists commandy; then
@@ -471,9 +519,9 @@ main() {
     show_banner
     detect_platform
     check_prerequisites
-    install_ollama
-    start_ollama_service
-    pull_model
+    initialize_commandy_directories
+    install_llamacpp
+    verify_llamacpp_setup
     install_commandy_binary
     initialize_commandy
     setup_shell_integration

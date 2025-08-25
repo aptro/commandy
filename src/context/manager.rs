@@ -18,7 +18,7 @@ pub struct ContextData {
 }
 
 pub struct ContextManager {
-    pub cache: CacheManager,
+    pub cache: Option<CacheManager>,
     storage: StorageManager,
     env_detector: EnvironmentDetector,
 }
@@ -26,15 +26,10 @@ pub struct ContextManager {
 impl ContextManager {
     pub fn new(_settings: &Settings) -> Result<Self> {
         let storage = StorageManager::new()?;
-        let cache_path = storage
-            .get_commandy_dir()
-            .join("cache")
-            .join("suggestions.db");
-        let cache = CacheManager::new(&cache_path)?;
         let env_detector = EnvironmentDetector::new();
 
         Ok(Self {
-            cache,
+            cache: None,
             storage,
             env_detector,
         })
@@ -43,6 +38,13 @@ impl ContextManager {
     pub fn initialize_directory(&mut self) -> Result<()> {
         info!("Initializing Commandy directory structure");
         self.storage.initialize_directory()?;
+
+        // Initialize cache after directories are created
+        let cache_path = self.storage
+            .get_commandy_dir()
+            .join("cache")
+            .join("suggestions.db");
+        self.cache = Some(CacheManager::new(&cache_path)?);
 
         // Detect and store initial environment
         let env_info = self.env_detector.detect_environment()?;
@@ -53,12 +55,17 @@ impl ContextManager {
 
     pub fn get_cached_suggestion(&self, prompt: &str) -> Result<Option<Suggestion>> {
         debug!("Checking cache for prompt: {prompt}");
-        self.cache.get_suggestion(prompt)
+        match &self.cache {
+            Some(cache) => cache.get_suggestion(prompt),
+            None => Ok(None), // Cache not initialized yet
+        }
     }
 
     pub fn cache_suggestion(&mut self, prompt: &str, suggestion: &Suggestion) -> Result<()> {
         debug!("Caching suggestion for prompt: {prompt}");
-        self.cache.cache_suggestion(prompt, suggestion)?;
+        if let Some(cache) = &mut self.cache {
+            cache.cache_suggestion(prompt, suggestion)?;
+        }
 
         // Also update context learning
         self.update_context_learning(prompt, suggestion)?;
@@ -73,24 +80,32 @@ impl ContextManager {
         let context_content = self.storage.read_context_file()?;
 
         // Get environment information
-        let environment = self.cache.get_environment()?;
+        let environment = match &self.cache {
+            Some(cache) => cache.get_environment()?,
+            None => std::collections::HashMap::new(), // Return empty if cache not initialized
+        };
 
         // Get recent successful commands from commandy history
-        let mut recent_commands = self.cache.get_recent_commands(10)?;
+        let mut recent_commands = match &self.cache {
+            Some(cache) => cache.get_recent_commands(10)?,
+            None => Vec::new(), // Return empty if cache not initialized
+        };
 
         // Integrate shell history for richer context
-        if let Ok(shell_history) = self.cache.get_shell_history() {
-            // Add relevant shell commands to context
-            let relevant_shell_commands: Vec<String> = shell_history
-                .into_iter()
-                .take(20) // Get more shell history
-                .filter(|cmd| self.is_command_relevant(cmd, prompt))
-                .collect();
+        if let Some(cache) = &self.cache {
+            if let Ok(shell_history) = cache.get_shell_history() {
+                // Add relevant shell commands to context
+                let relevant_shell_commands: Vec<String> = shell_history
+                    .into_iter()
+                    .take(20) // Get more shell history
+                    .filter(|cmd| self.is_command_relevant(cmd, prompt))
+                    .collect();
 
-            // Merge and deduplicate
-            recent_commands.extend(relevant_shell_commands);
-            recent_commands.sort();
-            recent_commands.dedup();
+                // Merge and deduplicate
+                recent_commands.extend(relevant_shell_commands);
+                recent_commands.sort();
+                recent_commands.dedup();
+            }
         }
 
         // Categorize the prompt
@@ -114,12 +129,13 @@ impl ContextManager {
         debug!("Recording command execution: {command} (success: {success})");
 
         // Record in history table
-        self.cache
-            .record_command_execution(command, prompt, success, exit_code)?;
+        if let Some(cache) = &mut self.cache {
+            cache.record_command_execution(command, prompt, success, exit_code)?;
 
-        // Update suggestion success metrics
-        if let Err(e) = self.cache.record_suggestion_usage(prompt, command, success) {
-            warn!("Failed to update suggestion usage metrics: {e}");
+            // Update suggestion success metrics
+            if let Err(e) = cache.record_suggestion_usage(prompt, command, success) {
+                warn!("Failed to update suggestion usage metrics: {e}");
+            }
         }
 
         if success {
@@ -142,7 +158,11 @@ impl ContextManager {
             self.learn_successful_command(prompt, command)?;
         }
 
-        self.cache.record_suggestion_usage(prompt, command, success)
+        if let Some(cache) = &mut self.cache {
+            cache.record_suggestion_usage(prompt, command, success)
+        } else {
+            Ok(()) // Cache not initialized yet
+        }
     }
 
     fn learn_successful_command(&self, prompt: &str, command: &str) -> Result<()> {
@@ -172,7 +192,11 @@ impl ContextManager {
 
     pub fn clear_cache(&mut self) -> Result<()> {
         info!("Clearing command cache");
-        self.cache.clear_cache()
+        if let Some(cache) = &mut self.cache {
+            cache.clear_cache()
+        } else {
+            Ok(()) // Cache not initialized yet
+        }
     }
 
     pub fn clear_context(&self) -> Result<()> {
@@ -192,9 +216,11 @@ impl ContextManager {
     }
 
     fn update_environment_info(&mut self, env_info: &HashMap<String, String>) -> Result<()> {
-        for (key, value) in env_info {
-            if let Err(e) = self.cache.update_environment(key, value) {
-                warn!("Failed to update environment info for {key}: {e}");
+        if let Some(cache) = &mut self.cache {
+            for (key, value) in env_info {
+                if let Err(e) = cache.update_environment(key, value) {
+                    warn!("Failed to update environment info for {key}: {e}");
+                }
             }
         }
         Ok(())

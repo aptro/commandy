@@ -1,9 +1,8 @@
 use anyhow::Result;
 use log::{debug, info, warn};
 use std::io;
-use std::path::PathBuf;
 
-use crate::ai::OllamaClient;
+use crate::ai::LlamaCppClient;
 use crate::cli::{Commands, FormatResult, OutputFormatter, PromptOptions, Spinner};
 use crate::config::Settings;
 use crate::context::ContextManager;
@@ -17,7 +16,7 @@ pub struct Suggestion {
 
 pub struct CommandHandler {
     context: ContextManager,
-    ai_client: OllamaClient,
+    ai_client: LlamaCppClient,
     settings: Settings,
     formatter: OutputFormatter,
 }
@@ -26,7 +25,7 @@ impl CommandHandler {
     pub fn new() -> Result<Self> {
         let settings = Settings::load()?;
         let context = ContextManager::new(&settings)?;
-        let ai_client = OllamaClient::new(&settings)?;
+        let ai_client = LlamaCppClient::new(&settings)?;
         let formatter = OutputFormatter::new(settings.output.use_colors);
 
         Ok(Self {
@@ -100,11 +99,11 @@ impl CommandHandler {
         // Initialize ~/.commandy directory
         self.context.initialize_directory()?;
 
-        // Check Ollama service
+        // Check llama.cpp binary
         if let Err(e) = self.ai_client.verify_connection().await {
             spinner.stop();
             return Ok(self.formatter.format_warning(&format!(
-                "Ollama service not available: {e}. Make sure Ollama is installed and running."
+                "llama.cpp binary not available: {e}. Make sure llama.cpp is installed."
             )));
         }
 
@@ -152,8 +151,10 @@ impl CommandHandler {
         );
 
         // Add cache statistics
-        if let Ok(stats) = self.context.cache.get_cache_stats() {
-            config_info.push_str(&stats);
+        if let Some(cache) = &self.context.cache {
+            if let Ok(stats) = cache.get_cache_stats() {
+                config_info.push_str(&stats);
+            }
         }
 
         Ok(config_info)
@@ -197,10 +198,10 @@ impl CommandHandler {
             diagnostics.push("✗ ~/.commandy directory missing (run: commandy init)".to_string());
         }
 
-        // Check Ollama connection
+        // Check llama.cpp binary
         match self.ai_client.verify_connection().await {
-            Ok(_) => diagnostics.push("✓ Ollama service running".to_string()),
-            Err(e) => diagnostics.push(format!("✗ Ollama service: {e}")),
+            Ok(_) => diagnostics.push("✓ llama.cpp binary working".to_string()),
+            Err(e) => diagnostics.push(format!("✗ llama.cpp binary: {e}")),
         }
 
         // Check database
@@ -210,13 +211,9 @@ impl CommandHandler {
             diagnostics.push("✗ Cache database missing".to_string());
         }
 
-        // Check model
-        let model_path = PathBuf::from(&self.settings.model.model_path);
-        if model_path.exists() {
-            diagnostics.push("✓ Model files found".to_string());
-        } else {
-            diagnostics.push("✗ Model files missing (run installation script)".to_string());
-        }
+        // Check model configuration
+        diagnostics.push(format!("✓ Using model: {}", self.settings.model.model_path));
+        diagnostics.push("✓ Model downloads automatically on first use".to_string());
 
         spinner.stop();
         Ok(format!("Commandy Health Check:\n{}", diagnostics.join("\n")))

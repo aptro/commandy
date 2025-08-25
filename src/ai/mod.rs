@@ -1,7 +1,7 @@
-pub mod ollama_client;
+pub mod llamacpp_client;
 pub mod prompt;
 pub mod response;
 
-pub use ollama_client::OllamaClient;
+pub use llamacpp_client::LlamaCppClient;
 pub use prompt::PromptBuilder;
 pub use response::ResponseParser;

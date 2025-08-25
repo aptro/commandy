@@ -10,9 +10,9 @@ recent_commands_limit = 100
 learning_enabled = true
 
 [model]
-model_path = "~/.commandy/models/gemma-3n"
-max_tokens = 100
-temperature = 0.0
+model_path = "ggml-org/gemma-3-270m-GGUF"
+max_tokens = 200
+temperature = 0.1
 
 [cache]
 max_cache_entries = 1000
