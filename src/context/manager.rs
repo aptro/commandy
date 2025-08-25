@@ -40,7 +40,8 @@ impl ContextManager {
         self.storage.initialize_directory()?;
 
         // Initialize cache after directories are created
-        let cache_path = self.storage
+        let cache_path = self
+            .storage
             .get_commandy_dir()
             .join("cache")
             .join("suggestions.db");

@@ -36,7 +36,7 @@ impl LlamaCppClient {
         // First, try the local installation path
         let home_dir = dirs::home_dir().context("Could not find home directory")?;
         let local_binary = home_dir.join(".commandy").join("bin").join("llama-cpp");
-        
+
         if local_binary.exists() {
             return Ok(local_binary);
         }
@@ -88,14 +88,14 @@ impl LlamaCppClient {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!(
-                "llama.cpp binary test failed: {}",
-                stderr
-            ));
+            return Err(anyhow::anyhow!("llama.cpp binary test failed: {}", stderr));
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        info!("llama.cpp binary verified: {}", stdout.lines().next().unwrap_or("unknown version"));
+        info!(
+            "llama.cpp binary verified: {}",
+            stdout.lines().next().unwrap_or("unknown version")
+        );
         Ok(())
     }
 
@@ -144,10 +144,7 @@ impl LlamaCppClient {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!(
-                "llama.cpp execution failed: {}",
-                stderr
-            ));
+            return Err(anyhow::anyhow!("llama.cpp execution failed: {}", stderr));
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -228,11 +225,11 @@ Commands for: {}"#,
         debug!("Parsing response: {}", response);
 
         let mut suggestions = Vec::new();
-        
+
         // Split response into lines and extract potential commands
         for line in response.lines() {
             let line = line.trim();
-            
+
             // Skip empty lines, comments, or lines that are too long
             if line.is_empty() || line.starts_with('#') || line.len() > 300 {
                 continue;
@@ -263,16 +260,16 @@ Commands for: {}"#,
     /// Fallback method to extract commands when primary parsing fails
     fn extract_commands_fallback(&self, response: &str, max_suggestions: usize) -> Vec<Suggestion> {
         let mut suggestions = Vec::new();
-        
+
         // Look for command-like patterns in the text
         let words: Vec<&str> = response.split_whitespace().collect();
         let mut current_command = String::new();
-        
+
         for word in words {
             if word.len() > 100 {
                 continue; // Skip very long words
             }
-            
+
             // Look for command starters
             if self.is_command_starter(word) {
                 if !current_command.is_empty() && self.is_valid_command(&current_command) {
@@ -281,7 +278,7 @@ Commands for: {}"#,
                         explanation: None,
                         confidence: 0.6,
                     });
-                    
+
                     if suggestions.len() >= max_suggestions {
                         break;
                     }
@@ -290,16 +287,18 @@ Commands for: {}"#,
             } else if !current_command.is_empty() {
                 current_command.push(' ');
                 current_command.push_str(word);
-                
+
                 // Stop at sentence endings
                 if word.ends_with('.') || word.ends_with('!') || word.ends_with('?') {
                     if self.is_valid_command(&current_command) {
                         suggestions.push(Suggestion {
-                            command: current_command.trim_end_matches(&['.', '!', '?']).to_string(),
+                            command: current_command
+                                .trim_end_matches(&['.', '!', '?'])
+                                .to_string(),
                             explanation: None,
                             confidence: 0.6,
                         });
-                        
+
                         if suggestions.len() >= max_suggestions {
                             break;
                         }
@@ -308,7 +307,7 @@ Commands for: {}"#,
                 }
             }
         }
-        
+
         // Handle last command if any
         if !current_command.is_empty() && self.is_valid_command(&current_command) {
             suggestions.push(Suggestion {
@@ -317,7 +316,7 @@ Commands for: {}"#,
                 confidence: 0.6,
             });
         }
-        
+
         suggestions
     }
 
@@ -325,23 +324,63 @@ Commands for: {}"#,
     fn is_command_starter(&self, word: &str) -> bool {
         matches!(
             word.trim_start_matches(|c: char| c.is_ascii_punctuation()),
-            "ls" | "cd" | "grep" | "find" | "docker" | "kubectl" | "git" | "curl" | "wget" |
-            "ssh" | "sudo" | "cp" | "mv" | "rm" | "cat" | "tail" | "head" | "ps" | "kill" |
-            "top" | "df" | "du" | "tar" | "zip" | "unzip" | "chmod" | "chown" | "systemctl" |
-            "service" | "apt" | "yum" | "npm" | "yarn" | "pip" | "cargo" | "make" | "cmake" |
-            "rsync" | "scp" | "awk" | "sed" | "sort" | "uniq" | "cut" | "tr" | "xargs"
+            "ls" | "cd"
+                | "grep"
+                | "find"
+                | "docker"
+                | "kubectl"
+                | "git"
+                | "curl"
+                | "wget"
+                | "ssh"
+                | "sudo"
+                | "cp"
+                | "mv"
+                | "rm"
+                | "cat"
+                | "tail"
+                | "head"
+                | "ps"
+                | "kill"
+                | "top"
+                | "df"
+                | "du"
+                | "tar"
+                | "zip"
+                | "unzip"
+                | "chmod"
+                | "chown"
+                | "systemctl"
+                | "service"
+                | "apt"
+                | "yum"
+                | "npm"
+                | "yarn"
+                | "pip"
+                | "cargo"
+                | "make"
+                | "cmake"
+                | "rsync"
+                | "scp"
+                | "awk"
+                | "sed"
+                | "sort"
+                | "uniq"
+                | "cut"
+                | "tr"
+                | "xargs"
         )
     }
 
     /// Checks if a line looks like a shell command
     fn looks_like_command(&self, line: &str) -> bool {
         let first_word = line.split_whitespace().next().unwrap_or("");
-        
+
         // Check if it starts with a known command
         if self.is_command_starter(first_word) {
             return true;
         }
-        
+
         // Check for command-like patterns
         line.contains("--") || line.contains("-") && line.split_whitespace().count() > 1
     }
@@ -350,7 +389,7 @@ Commands for: {}"#,
     fn is_valid_command(&self, command: &str) -> bool {
         // Basic safety checks
         let dangerous_patterns = ["rm -rf /", "rm -rf *", "dd if=", "mkfs", "fdisk", "> /dev/"];
-        
+
         for pattern in &dangerous_patterns {
             if command.contains(pattern) {
                 warn!("Rejected dangerous command: {}", command);
@@ -365,7 +404,7 @@ Commands for: {}"#,
 
         // Extract the executable name
         let first_word = command.split_whitespace().next().unwrap_or("").trim();
-        
+
         if first_word.is_empty() || first_word.starts_with('#') {
             return false;
         }
@@ -378,7 +417,9 @@ Commands for: {}"#,
         }
 
         // Allow shell built-ins and paths
-        if first_word.contains('/') || matches!(first_word, "cd" | "echo" | "pwd" | "export" | "alias") {
+        if first_word.contains('/')
+            || matches!(first_word, "cd" | "echo" | "pwd" | "export" | "alias")
+        {
             return true;
         }
 

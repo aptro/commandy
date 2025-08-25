@@ -216,7 +216,10 @@ impl CommandHandler {
         diagnostics.push("✓ Model downloads automatically on first use".to_string());
 
         spinner.stop();
-        Ok(format!("Commandy Health Check:\n{}", diagnostics.join("\n")))
+        Ok(format!(
+            "Commandy Health Check:\n{}",
+            diagnostics.join("\n")
+        ))
     }
 
     fn handle_version(&self) -> Result<String> {
